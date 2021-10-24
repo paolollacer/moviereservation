@@ -1,6 +1,4 @@
-# moviereservation
-
-Movie Reservation App v1.0.0.0
+Movie Reservation App
 by Juan Paolo Llacer
 
 Setup:

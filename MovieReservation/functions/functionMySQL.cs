@@ -68,7 +68,7 @@ namespace MovieReservation
             }
         }
 
-        public static bool setDatabase(string SQL)
+        public static bool setDatabase(string SQL, Dictionary<string, string> dictionaryOfParameters)
         {
             string server;
             string userid;
@@ -98,6 +98,8 @@ namespace MovieReservation
                 mySqlConnection.Open();
 
                 mySqlCommand = new MySqlCommand(SQL, mySqlConnection);
+                foreach (KeyValuePair<string, string> parameter in dictionaryOfParameters)
+                    mySqlCommand.Parameters.AddWithValue(parameter.Key, parameter.Value);
                 mySqlCommand.CommandTimeout = 300;
                 mySqlCommand.ExecuteNonQuery();
                 mySqlConnection.Close();

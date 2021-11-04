@@ -13,5 +13,6 @@ namespace MovieReservation.classes
         public static string Username { get; set; } = "";
         public static string Password { get; set; } = "";
         public static string Database { get; set; } = "";
+        public static bool MSSQLMode { get; set; } = false;
     }
 }

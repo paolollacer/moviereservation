@@ -1,4 +1,5 @@
-﻿using System;
+﻿using MovieReservation.classes;
+using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Data;
@@ -63,6 +64,8 @@ namespace MovieReservation
         private void btnClearAll_Click(object sender, EventArgs e)
         {
             string sqlQuery;
+            bool setDatabase;
+
             try
             {
                 sqlQuery = "";
@@ -73,13 +76,25 @@ namespace MovieReservation
                 if (MessageBox.Show("Final Confirmation: Do you truly will to proceed clearing all pending reservations?", "Final Confirmation - Clear All Reservations", MessageBoxButtons.OKCancel, MessageBoxIcon.Warning) == DialogResult.Cancel)
                     return;
 
-                sqlQuery = $"UPDATE `transactiondetail` as D, `transaction` as T, `movietimeslot` as S" +
-                           $" SET D.`iscancelled`=1 WHERE D.`iscancelled`=0" +
-                           $" AND D.`transaction_id`=T.`table_id`" +
-                           $" AND T.`movietimeslot_id`=S.`table_id`" +
-                           $" AND NOW() < S.`timeslot`" +
-                           $" AND S.`cinema_id`='{this.CinemaId}'";
-                functionMySQL.setDatabase(sqlQuery);
+                if (classGlobalVariables.MSSQLMode)
+                {
+                    sqlQuery = @"UPDATE D SET D.iscancelled = 1
+                                 FROM transactiondetail D, [transaction] T, movietimeslot S
+                                 WHERE D.iscancelled = 0 AND D.transaction_id = T.table_id 
+                                 AND T.movietimeslot_id = S.table_id
+                                 AND CURRENT_TIMESTAMP < S.timeslot AND S.cinema_id = @cinemaId";
+                    setDatabase = functionMSSQL.setDatabase(sqlQuery, new Dictionary<string, string> { ["@cinemaId"] = this.CinemaId.ToString() });
+                }
+                else
+                {
+                    sqlQuery = $"UPDATE `transactiondetail` as D, `transaction` as T, `movietimeslot` as S" +
+                               $" SET D.`iscancelled`=1 WHERE D.`iscancelled`=0" +
+                               $" AND D.`transaction_id`=T.`table_id`" +
+                               $" AND T.`movietimeslot_id`=S.`table_id`" +
+                               $" AND NOW() < S.`timeslot`" +
+                               $" AND S.`cinema_id`='@cinemaId'";
+                    setDatabase = functionMySQL.setDatabase(sqlQuery, new Dictionary<string, string> { ["@cinemaId"] = this.CinemaId.ToString() });
+                }
 
                 MessageBox.Show("Successfully cleared all pending reservations.", "Success", MessageBoxButtons.OK, MessageBoxIcon.Information);
                 this.DoneClear = true;

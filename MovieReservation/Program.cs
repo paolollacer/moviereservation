@@ -39,6 +39,9 @@ namespace MovieReservation
                 try { classGlobalVariables.Sqlport = dic["SQLPORT"]; }
                 catch { classGlobalVariables.Sqlport = "3306"; };
 
+                try { classGlobalVariables.MSSQLMode = Convert.ToBoolean(dic["MSSQLMODE"]); }
+                catch { classGlobalVariables.MSSQLMode = false; };
+
                 classGlobalVariables.Username = dic["USERNAME"];
                 classGlobalVariables.Password = dic["PASSWORD"];
                 classGlobalVariables.Database = dic["DATABASE"];

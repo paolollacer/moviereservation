@@ -3,3 +3,4 @@ Sqlport=3306
 UserName=root
 Password=1234
 Database=moviereservationdb
+MSSQLmode=false

@@ -1,4 +1,5 @@
-﻿using System;
+﻿using MovieReservation.classes;
+using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Data;
@@ -97,31 +98,64 @@ namespace MovieReservation
             long next_wid;
             long transaction_tableId;
             bool isCancelled;
-            functionMySQL function;
+            bool setDatabase;
+            functionMySQL mySQLfunction;
+            functionMSSQL microsoftSQLfunction;
 
             try
             {
                 isCancelled = this.cancelSeatsMode;
-                function = new functionMySQL();
+                mySQLfunction = new functionMySQL();
+                microsoftSQLfunction = new functionMSSQL();
 
-                transaction_tableId = function.getNextTableId("transaction");
-                sqlQuery = $"UPDATE `transaction` SET `movietimeslot_id`={this.movieTimeslotId}," +
-                           $" `customername`='{this.customerName}'," +
-                           $" `date_of_transaction`='{DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss")}'," +
-                           $" `totalamount`={this.totalAmount}" +
-                           $" WHERE `table_id`={transaction_tableId}";
+                transaction_tableId = classGlobalVariables.MSSQLMode ? microsoftSQLfunction.getNextTableId("[transaction]") : mySQLfunction.getNextTableId("transaction");
+                sqlQuery = $"UPDATE {(classGlobalVariables.MSSQLMode ? "[transaction]" : "`transaction`")} SET `movietimeslot_id`= @timeslotId ," +
+                           $" `customername`= @customer ," +
+                           $" `date_of_transaction`= @date ," +
+                           $" `totalamount`= @totalAmount " +
+                           $" WHERE `table_id`= @transactionTableId ";
                                
-                functionMySQL.setDatabase(sqlQuery);
+                setDatabase = classGlobalVariables.MSSQLMode ? functionMSSQL.setDatabase(sqlQuery, new Dictionary<string, string> 
+                              {
+                                    ["@timeslotId"] = this.movieTimeslotId.ToString(),
+                                    ["@customer"] = this.customerName,
+                                    ["@date"] = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"),
+                                    ["@totalAmount"] = totalAmount.ToString(),
+                                    ["@transactionTableId"] = transaction_tableId.ToString()
+                              }) :
+                              functionMySQL.setDatabase(sqlQuery, new Dictionary<string, string>
+                              {
+                                  ["@timeslotId"] = this.movieTimeslotId.ToString(),
+                                  ["@customer"] = this.customerName,
+                                  ["@date"] = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"),
+                                  ["@totalAmount"] = totalAmount.ToString(),
+                                  ["@transactionTableId"] = transaction_tableId.ToString()
+                              });
 
                 foreach (string seat in listOfSelectedSeats)
                 {
-                    next_wid = function.getNextTableId("transactiondetail");
-                    sqlQuery = $"UPDATE `transactiondetail` SET `transaction_id`={transaction_tableId}," +
-                           $" `seatnumber`='{seat}'," +
-                           $" `iscancelled`='{(isCancelled ? '1' : '0')}'" +
-                           $" WHERE `table_id`={next_wid}";
+                    next_wid = classGlobalVariables.MSSQLMode ? microsoftSQLfunction.getNextTableId("transactiondetail") : mySQLfunction.getNextTableId("transactiondetail");
+                    sqlQuery = $"UPDATE `transactiondetail` SET `transaction_id`= @transactionTableId ," +
+                           $" `seatnumber`= @seat ," +
+                           $" `iscancelled`= @isCancelled " +
+                           $" WHERE `table_id`= @tableId";
 
-                    functionMySQL.setDatabase(sqlQuery);
+                    setDatabase = classGlobalVariables.MSSQLMode ? functionMSSQL.setDatabase(sqlQuery, new Dictionary<string, string>
+                                  {
+                                        ["@transactionTableId"] = transaction_tableId.ToString(),
+                                        ["@seat"] = seat,
+                                        ["@customer"] = this.customerName,
+                                        ["@isCancelled"] = isCancelled ? "1" : "0" ,
+                                        ["@tableId"] = next_wid.ToString()                                        
+                                  }) :
+                                  functionMySQL.setDatabase(sqlQuery, new Dictionary<string, string>
+                                  {
+                                      ["@transactionTableId"] = transaction_tableId.ToString(),
+                                      ["@seat"] = seat,
+                                      ["@customer"] = this.customerName,
+                                      ["@isCancelled"] = isCancelled ? "1" : "0",
+                                      ["@tableId"] = next_wid.ToString()
+                                  });
                 }
 
                 MessageBox.Show($"Your seat {(this.cancelSeatsMode ? "cancellation" : "reservation")} was successful!", "Success", MessageBoxButtons.OK);

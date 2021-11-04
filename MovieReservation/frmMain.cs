@@ -196,12 +196,14 @@ namespace MovieReservation
             string sqlQuery;
             string cinemaNumber;
             long nextTableId;
-            functionMySQL function;
+            functionMySQL mySQLfunction;
+            functionMSSQL microsoftSQLfunction;
             DataTable cinemaInfoDataTable;
             DataTable movieTimeslotDataTable;
             DataTable reservedSeatsDataTable;
             DateTime tempDateTime;
             classMovieTimeslot classMovieTimeslot;
+            bool setDatabase;
             
             try
             {
@@ -209,28 +211,54 @@ namespace MovieReservation
                 movie2 = new classMovie();
                 movie3 = new classMovie();
                 nextTableId = 0;
-                function = new functionMySQL();
+                mySQLfunction = new functionMySQL();
+                microsoftSQLfunction = new functionMSSQL();
 
                 for (int cinemaId = 1; cinemaId <= 3; cinemaId += 1)
                 {
                     sqlQuery = @"SELECT C.`table_id` as `cinema_id`, C.`movietitle_id`, C.`ticketprice`, C.`poster_filepath`
                                 FROM cinema as C
                                 WHERE C.`table_id` in (" + cinemaId + ")";
-                    if (functionMySQL.getFromDatabase(sqlQuery).Rows.Count <= 0)
+                    
+                    if (classGlobalVariables.MSSQLMode)
                     {
-                        sqlQuery = $"INSERT INTO `cinema` (`table_id`,`movietitle_id`,`ticketprice`,`poster_filepath`) VALUES ({cinemaId},100000000001,0,'')";
-                        functionMySQL.setDatabase(sqlQuery);
+                        if (functionMSSQL.getFromDatabase(sqlQuery).Rows.Count <= 0)
+                        {
+                            sqlQuery = $"INSERT INTO `cinema` (`table_id`,`movietitle_id`,`ticketprice`,`poster_filepath`) VALUES (@cinemaId,100000000001,0,'')";
+                            functionMSSQL.setDatabase(sqlQuery, new Dictionary<string, string>() { ["@cinemaId"] = cinemaId.ToString() });
+                        }
+                    }
+                    else if (functionMySQL.getFromDatabase(sqlQuery).Rows.Count <= 0)
+                    {
+                        sqlQuery = $"INSERT INTO `cinema` (`table_id`,`movietitle_id`,`ticketprice`,`poster_filepath`) VALUES (@cinemaId,100000000001,0,'')";
+                        functionMySQL.setDatabase(sqlQuery, new Dictionary<string, string>() { ["@cinemaId"] = cinemaId.ToString() });
                     }
 
                     sqlQuery = @"SELECT M.`table_id`
                                 FROM movietitle as M
                                 LEFT JOIN cinema as C ON M.`table_id` = C.`movietitle_id`
                                 WHERE C.`table_id` in (" + cinemaId + ")";
-                    if (functionMySQL.getFromDatabase(sqlQuery).Rows.Count <= 0)
+                                        
+                    if (classGlobalVariables.MSSQLMode)
                     {
-                        nextTableId = function.getNextTableId("movietitle");
-                        sqlQuery = $"UPDATE `movietitle` SET `movietitle`='Movie Title {cinemaId}' WHERE `table_id`={nextTableId}";
-                        functionMySQL.setDatabase(sqlQuery);
+                        nextTableId = classGlobalVariables.MSSQLMode? microsoftSQLfunction.getNextTableId("movietitle") : mySQLfunction.getNextTableId("movietitle");
+                        if (functionMSSQL.getFromDatabase(sqlQuery).Rows.Count == 1)
+                        {
+                            sqlQuery = $"UPDATE `movietitle` SET `movietitle`='Movie Title {cinemaId.ToString()}' WHERE `table_id`={nextTableId}";
+                            functionMSSQL.setDatabase(sqlQuery, new Dictionary<string, string>()
+                            {
+                                ["@nextTableId"] = nextTableId.ToString()
+                            });
+                        }
+                    }
+                    else if (functionMySQL.getFromDatabase(sqlQuery).Rows.Count <= 0)
+                    {
+                        nextTableId = classGlobalVariables.MSSQLMode ? microsoftSQLfunction.getNextTableId("movietitle") : mySQLfunction.getNextTableId("movietitle");
+                        sqlQuery = $"UPDATE `movietitle` SET `movietitle`='Movie Title {cinemaId.ToString()}' WHERE `table_id`={nextTableId}";
+                        functionMySQL.setDatabase(sqlQuery, new Dictionary<string, string>()
+                        {
+                            ["@nextTableId"] = nextTableId.ToString()
+                        });
                     }
                 }
 
@@ -238,9 +266,19 @@ namespace MovieReservation
                                 FROM cinema as C
                                 LEFT JOIN movietitle as V ON V.`table_id` = C.`movietitle_id`
                                 WHERE C.`table_id` in (1,2,3)";
-                cinemaInfoDataTable = functionMySQL.getFromDatabase(sqlQuery);
-                if (cinemaInfoDataTable.Rows.Count <= 0)
-                    return;
+                if (classGlobalVariables.MSSQLMode)
+                {
+                    cinemaInfoDataTable = functionMSSQL.getFromDatabase(sqlQuery);
+                    if (cinemaInfoDataTable.Rows.Count <= 0)
+                        return;
+                }
+                else
+                {
+                    cinemaInfoDataTable = functionMySQL.getFromDatabase(sqlQuery);
+                    if (cinemaInfoDataTable.Rows.Count <= 0)
+                        return;
+                }
+                
 
                 foreach (DataRow row in cinemaInfoDataTable.Rows)
                 {
@@ -249,10 +287,10 @@ namespace MovieReservation
                                             FROM movietimeslot as S
                                             LEFT JOIN cinema as C ON C.`table_id` = S.`cinema_id`
                                             WHERE S.`cinema_id` in (" + cinemaNumber + ")" +
-                                            "AND C.`movietitle_id` = S.`movietitle_id`" +
-                                            "AND S.`isremoved`=0";
-
-                    movieTimeslotDataTable = functionMySQL.getFromDatabase(sqlQuery);
+                                            " AND C.`movietitle_id` = S.`movietitle_id`" +
+                                            " AND S.`isremoved`=0";
+                    movieTimeslotDataTable = classGlobalVariables.MSSQLMode ? functionMSSQL.getFromDatabase(sqlQuery) : 
+                                             functionMySQL.getFromDatabase(sqlQuery);
 
                     switch (cinemaNumber)
                     {
@@ -275,11 +313,23 @@ namespace MovieReservation
                                 tempDateTime = DateTime.Today.Date + TimeSpan.Parse("01:00:00");
                                 for (int index = 0; index < 5; index += 1)
                                 {
-                                    nextTableId = function.getNextTableId("movietimeslot");
-                                    sqlQuery = $"UPDATE `movietimeslot` SET `movietitle_id`='{movie1.getMovieId()}'," +
-                                               $"`cinema_id`={movie1.getCinemaId()}," +
-                                               $"`timeslot`='{tempDateTime.ToString("yyyy-MM-dd HH:mm:ss")}' WHERE `table_id`={nextTableId}";
-                                    functionMySQL.setDatabase(sqlQuery);
+                                    nextTableId = classGlobalVariables.MSSQLMode ? microsoftSQLfunction.getNextTableId("movietimeslot") : mySQLfunction.getNextTableId("movietimeslot");
+                                    sqlQuery = $"UPDATE `movietimeslot` SET `movietitle_id`= @movietitle_id," +
+                                               $"`cinema_id`= @cinemaId," +
+                                               $"`timeslot`= @timeslot WHERE `table_id`= @nextTableId";
+                                    setDatabase = classGlobalVariables.MSSQLMode ? functionMSSQL.setDatabase(sqlQuery, new Dictionary<string, string>
+                                    {
+                                        ["@movietitle_id"] = movie1.getMovieId().ToString(),
+                                        ["@cinemaId"] = movie1.getCinemaId().ToString(),
+                                        ["@timeslot"] = tempDateTime.ToString("yyyy-MM-dd HH:mm:ss"),
+                                        ["@nextTableId"] = nextTableId.ToString()
+                                    }) : functionMySQL.setDatabase(sqlQuery, new Dictionary<string, string>
+                                    {
+                                        ["@movietitle_id"] = movie1.getMovieId().ToString(),
+                                        ["@cinemaId"] = movie1.getCinemaId().ToString(),
+                                        ["@timeslot"] = tempDateTime.ToString("yyyy-MM-dd HH:mm:ss"),
+                                        ["@nextTableId"] = nextTableId.ToString()
+                                    });
 
                                     classMovieTimeslot = new classMovieTimeslot();
                                     classMovieTimeslot.setId(nextTableId);
@@ -309,22 +359,28 @@ namespace MovieReservation
 
                                 sqlQuery = @"SELECT D.`seatnumber`
                                             FROM transactiondetail as D
-                                            LEFT JOIN transaction as T ON D.`transaction_id` = T.`table_id`
+                                            LEFT JOIN " + (classGlobalVariables.MSSQLMode ? "[transaction]" : "transaction") + @" as T ON D.`transaction_id` = T.`table_id`
                                             WHERE T.`movietimeslot_id` in (" + classMovieTimeslot.getId() + 
                                             ") AND D.`iscancelled` = 0";
 
-                                reservedSeatsDataTable = functionMySQL.getFromDatabase(sqlQuery);
+                                reservedSeatsDataTable = classGlobalVariables.MSSQLMode ? functionMSSQL.getFromDatabase(sqlQuery) :
+                                                         functionMySQL.getFromDatabase(sqlQuery);
                                 if (reservedSeatsDataTable.Rows.Count > 0)
                                 {
                                     foreach (DataRow seat in reservedSeatsDataTable.Rows)
                                     {
                                         sqlQuery = @"SELECT D.`seatnumber`
                                             FROM transactiondetail as D
-                                            LEFT JOIN transaction as T ON D.`transaction_id` = T.`table_id`
+                                            LEFT JOIN " + (classGlobalVariables.MSSQLMode ? "[transaction]" : "transaction") + @" as T ON D.`transaction_id` = T.`table_id`
                                             WHERE T.`movietimeslot_id` in (" + classMovieTimeslot.getId() +
                                             ") AND D.`seatnumber`='" + seat["seatnumber"].ToString() + "' AND D.`iscancelled` = 1";
 
-                                        if (functionMySQL.getFromDatabase(sqlQuery).Rows.Count <= 0)
+                                        if (classGlobalVariables.MSSQLMode)
+                                        {
+                                            if (functionMSSQL.getFromDatabase(sqlQuery).Rows.Count <= 0)
+                                                classMovieTimeslot.getListOfReservedSeats().Add(seat["seatnumber"].ToString());
+                                        }
+                                        else if (functionMySQL.getFromDatabase(sqlQuery).Rows.Count <= 0)
                                             classMovieTimeslot.getListOfReservedSeats().Add(seat["seatnumber"].ToString());
                                     }
                                 }
@@ -333,18 +389,30 @@ namespace MovieReservation
                                 comBoxTimeslots1.Items.Add(classMovieTimeslot.getTimeslot());
                             }
 
-                            if (comBoxTimeslots1.Items.Count >= 5)
+                            if (comBoxTimeslots1.Items.Count >= 5)                            
                                 break;
 
                             tempDateTime = DateTime.Parse(movie1.getListOfMovieTimeslots().LastOrDefault().getTimeslot());
                             for (int index = (5 - movieTimeslotDataTable.Rows.Count); comBoxTimeslots1.Items.Count < 5; index += 1)
                             {
                                 tempDateTime = tempDateTime.AddHours(1);
-                                nextTableId = function.getNextTableId("movietimeslot");
-                                sqlQuery = $"UPDATE `movietimeslot` SET `movietitle_id`='{movie1.getMovieId()}'," +
-                                            $"`cinema_id`={movie1.getCinemaId()}," +
-                                            $"`timeslot`='{tempDateTime.ToString("yyyy-MM-dd HH:mm:ss")}' WHERE `table_id`={nextTableId}";
-                                functionMySQL.setDatabase(sqlQuery);
+                                nextTableId = classGlobalVariables.MSSQLMode ? microsoftSQLfunction.getNextTableId("movietimeslot") : mySQLfunction.getNextTableId("movietimeslot");
+                                sqlQuery = $"UPDATE `movietimeslot` SET `movietitle_id`= @movietitle_id," +
+                                           $"`cinema_id`= @cinemaId," +
+                                           $"`timeslot`= @timeslot WHERE `table_id`= @nextTableId";
+                                setDatabase = classGlobalVariables.MSSQLMode ? functionMSSQL.setDatabase(sqlQuery, new Dictionary<string, string>
+                                {
+                                    ["@movietitle_id"] = movie1.getMovieId().ToString(),
+                                    ["@cinemaId"] = movie1.getCinemaId().ToString(),
+                                    ["@timeslot"] = tempDateTime.ToString("yyyy-MM-dd HH:mm:ss"),
+                                    ["@nextTableId"] = nextTableId.ToString()
+                                }) : functionMySQL.setDatabase(sqlQuery, new Dictionary<string, string>
+                                {
+                                    ["@movietitle_id"] = movie1.getMovieId().ToString(),
+                                    ["@cinemaId"] = movie1.getCinemaId().ToString(),
+                                    ["@timeslot"] = tempDateTime.ToString("yyyy-MM-dd HH:mm:ss"),
+                                    ["@nextTableId"] = nextTableId.ToString()
+                                });
 
                                 classMovieTimeslot = new classMovieTimeslot();
                                 classMovieTimeslot.setId(nextTableId);
@@ -379,11 +447,23 @@ namespace MovieReservation
                                 tempDateTime = DateTime.Today.Date + TimeSpan.Parse("01:00:00");
                                 for (int index = 0; index < 5; index += 1)
                                 {
-                                    nextTableId = function.getNextTableId("movietimeslot");
-                                    sqlQuery = $"UPDATE `movietimeslot` SET `movietitle_id`='{movie2.getMovieId()}'," +
-                                               $"`cinema_id`={movie2.getCinemaId()}," +
-                                               $"`timeslot`='{tempDateTime.ToString("yyyy-MM-dd HH:mm:ss")}' WHERE `table_id`={nextTableId}";
-                                    functionMySQL.setDatabase(sqlQuery);
+                                    nextTableId = classGlobalVariables.MSSQLMode ? microsoftSQLfunction.getNextTableId("movietimeslot") : mySQLfunction.getNextTableId("movietimeslot");
+                                    sqlQuery = $"UPDATE `movietimeslot` SET `movietitle_id`= @movietitle_id," +
+                                               $"`cinema_id`= @cinemaId," +
+                                               $"`timeslot`= @timeslot WHERE `table_id`= @nextTableId";
+                                    setDatabase = classGlobalVariables.MSSQLMode ? functionMSSQL.setDatabase(sqlQuery, new Dictionary<string, string>
+                                    {
+                                        ["@movietitle_id"] = movie2.getMovieId().ToString(),
+                                        ["@cinemaId"] = movie2.getCinemaId().ToString(),
+                                        ["@timeslot"] = tempDateTime.ToString("yyyy-MM-dd HH:mm:ss"),
+                                        ["@nextTableId"] = nextTableId.ToString()
+                                    }) : functionMySQL.setDatabase(sqlQuery, new Dictionary<string, string>
+                                    {
+                                        ["@movietitle_id"] = movie2.getMovieId().ToString(),
+                                        ["@cinemaId"] = movie2.getCinemaId().ToString(),
+                                        ["@timeslot"] = tempDateTime.ToString("yyyy-MM-dd HH:mm:ss"),
+                                        ["@nextTableId"] = nextTableId.ToString()
+                                    });
 
                                     classMovieTimeslot = new classMovieTimeslot();
                                     classMovieTimeslot.setId(nextTableId);
@@ -413,22 +493,28 @@ namespace MovieReservation
 
                                 sqlQuery = @"SELECT D.`seatnumber`
                                             FROM transactiondetail as D
-                                            LEFT JOIN transaction as T ON D.`transaction_id` = T.`table_id`
+                                            LEFT JOIN " + (classGlobalVariables.MSSQLMode ? "[transaction]" : "transaction") + @" as T ON D.`transaction_id` = T.`table_id`
                                             WHERE T.`movietimeslot_id` in (" + classMovieTimeslot.getId() +
                                             ") AND D.`iscancelled` = 0";
 
-                                reservedSeatsDataTable = functionMySQL.getFromDatabase(sqlQuery);
+                                reservedSeatsDataTable =  classGlobalVariables.MSSQLMode ? functionMSSQL.getFromDatabase(sqlQuery) :
+                                                          functionMySQL.getFromDatabase(sqlQuery);
                                 if (reservedSeatsDataTable.Rows.Count > 0)
                                 {
                                     foreach (DataRow seat in reservedSeatsDataTable.Rows)
                                     {
                                         sqlQuery = @"SELECT D.`seatnumber`
                                             FROM transactiondetail as D
-                                            LEFT JOIN transaction as T ON D.`transaction_id` = T.`table_id`
+                                            LEFT JOIN " + (classGlobalVariables.MSSQLMode ? "[transaction]" : "transaction") + @" as T ON D.`transaction_id` = T.`table_id`
                                             WHERE T.`movietimeslot_id` in (" + classMovieTimeslot.getId() +
                                             ") AND D.`seatnumber`='" + seat["seatnumber"].ToString() + "' AND D.`iscancelled` = 1";
 
-                                        if (functionMySQL.getFromDatabase(sqlQuery).Rows.Count <= 0)
+                                        if (classGlobalVariables.MSSQLMode)
+                                        {
+                                            if (functionMSSQL.getFromDatabase(sqlQuery).Rows.Count <= 0)
+                                                classMovieTimeslot.getListOfReservedSeats().Add(seat["seatnumber"].ToString());
+                                        }
+                                        else if (functionMySQL.getFromDatabase(sqlQuery).Rows.Count <= 0)
                                             classMovieTimeslot.getListOfReservedSeats().Add(seat["seatnumber"].ToString());
                                     }
                                 }
@@ -444,11 +530,23 @@ namespace MovieReservation
                             for (int index = (5 - movieTimeslotDataTable.Rows.Count); comBoxTimeslots2.Items.Count < 5; index += 1)
                             {
                                 tempDateTime = tempDateTime.AddHours(1);
-                                nextTableId = function.getNextTableId("movietimeslot");
-                                sqlQuery = $"UPDATE `movietimeslot` SET `movietitle_id`='{movie2.getMovieId()}'," +
-                                            $"`cinema_id`={movie2.getCinemaId()}," +
-                                            $"`timeslot`='{tempDateTime.ToString("yyyy-MM-dd HH:mm:ss")}' WHERE `table_id`={nextTableId}";
-                                functionMySQL.setDatabase(sqlQuery);
+                                nextTableId = classGlobalVariables.MSSQLMode ? microsoftSQLfunction.getNextTableId("movietimeslot") : mySQLfunction.getNextTableId("movietimeslot");
+                                sqlQuery = $"UPDATE `movietimeslot` SET `movietitle_id`= @movietitle_id," +
+                                           $"`cinema_id`= @cinemaId," +
+                                           $"`timeslot`= @timeslot WHERE `table_id`= @nextTableId";
+                                setDatabase = classGlobalVariables.MSSQLMode ? functionMSSQL.setDatabase(sqlQuery, new Dictionary<string, string>
+                                {
+                                    ["@movietitle_id"] = movie2.getMovieId().ToString(),
+                                    ["@cinemaId"] = movie2.getCinemaId().ToString(),
+                                    ["@timeslot"] = tempDateTime.ToString("yyyy-MM-dd HH:mm:ss"),
+                                    ["@nextTableId"] = nextTableId.ToString()
+                                }) : functionMySQL.setDatabase(sqlQuery, new Dictionary<string, string>
+                                {
+                                    ["@movietitle_id"] = movie2.getMovieId().ToString(),
+                                    ["@cinemaId"] = movie2.getCinemaId().ToString(),
+                                    ["@timeslot"] = tempDateTime.ToString("yyyy-MM-dd HH:mm:ss"),
+                                    ["@nextTableId"] = nextTableId.ToString()
+                                });
 
                                 classMovieTimeslot = new classMovieTimeslot();
                                 classMovieTimeslot.setId(nextTableId);
@@ -483,11 +581,23 @@ namespace MovieReservation
                                 tempDateTime = DateTime.Today.Date + TimeSpan.Parse("01:00:00");
                                 for (int index = 0; index < 5; index += 1)
                                 {
-                                    nextTableId = function.getNextTableId("movietimeslot");
-                                    sqlQuery = $"UPDATE `movietimeslot` SET `movietitle_id`='{movie3.getMovieId()}'," +
-                                               $"`cinema_id`={movie3.getCinemaId()}," +
-                                               $"`timeslot`='{tempDateTime.ToString("yyyy-MM-dd HH:mm:ss")}' WHERE `table_id`={nextTableId}";
-                                    functionMySQL.setDatabase(sqlQuery);
+                                    nextTableId = classGlobalVariables.MSSQLMode ? microsoftSQLfunction.getNextTableId("movietimeslot") : mySQLfunction.getNextTableId("movietimeslot");
+                                    sqlQuery = $"UPDATE `movietimeslot` SET `movietitle_id`= @movietitle_id," +
+                                               $"`cinema_id`= @cinemaId," +
+                                               $"`timeslot`= @timeslot WHERE `table_id`= @nextTableId";
+                                    setDatabase = classGlobalVariables.MSSQLMode ? functionMSSQL.setDatabase(sqlQuery, new Dictionary<string, string>
+                                    {
+                                        ["@movietitle_id"] = movie3.getMovieId().ToString(),
+                                        ["@cinemaId"] = movie3.getCinemaId().ToString(),
+                                        ["@timeslot"] = tempDateTime.ToString("yyyy-MM-dd HH:mm:ss"),
+                                        ["@nextTableId"] = nextTableId.ToString()
+                                    }) : functionMySQL.setDatabase(sqlQuery, new Dictionary<string, string>
+                                    {
+                                        ["@movietitle_id"] = movie3.getMovieId().ToString(),
+                                        ["@cinemaId"] = movie3.getCinemaId().ToString(),
+                                        ["@timeslot"] = tempDateTime.ToString("yyyy-MM-dd HH:mm:ss"),
+                                        ["@nextTableId"] = nextTableId.ToString()
+                                    });
 
                                     classMovieTimeslot = new classMovieTimeslot();
                                     classMovieTimeslot.setId(nextTableId);
@@ -517,22 +627,28 @@ namespace MovieReservation
 
                                 sqlQuery = @"SELECT D.`seatnumber`
                                             FROM transactiondetail as D
-                                            LEFT JOIN transaction as T ON D.`transaction_id` = T.`table_id`
+                                            LEFT JOIN " + (classGlobalVariables.MSSQLMode ? "[transaction]" : "transaction") + @" as T ON D.`transaction_id` = T.`table_id`
                                             WHERE T.`movietimeslot_id` in (" + classMovieTimeslot.getId() +
                                             ") AND D.`iscancelled` = 0";
 
-                                reservedSeatsDataTable = functionMySQL.getFromDatabase(sqlQuery);
+                                reservedSeatsDataTable = classGlobalVariables.MSSQLMode ? functionMSSQL.getFromDatabase(sqlQuery) :
+                                                         functionMySQL.getFromDatabase(sqlQuery);
                                 if (reservedSeatsDataTable.Rows.Count > 0)
                                 {
                                     foreach (DataRow seat in reservedSeatsDataTable.Rows)
                                     {
                                         sqlQuery = @"SELECT D.`seatnumber`
                                             FROM transactiondetail as D
-                                            LEFT JOIN transaction as T ON D.`transaction_id` = T.`table_id`
+                                            LEFT JOIN " + (classGlobalVariables.MSSQLMode ? "[transaction]" : "transaction") + @" as T ON D.`transaction_id` = T.`table_id`
                                             WHERE T.`movietimeslot_id` in (" + classMovieTimeslot.getId() +
                                             ") AND D.`seatnumber`='" + seat["seatnumber"].ToString() + "' AND D.`iscancelled` = 1";
 
-                                        if (functionMySQL.getFromDatabase(sqlQuery).Rows.Count <= 0)
+                                        if (classGlobalVariables.MSSQLMode)
+                                        {
+                                            if (functionMSSQL.getFromDatabase(sqlQuery).Rows.Count <= 0)
+                                                classMovieTimeslot.getListOfReservedSeats().Add(seat["seatnumber"].ToString());
+                                        }
+                                        else if (functionMySQL.getFromDatabase(sqlQuery).Rows.Count <= 0)
                                             classMovieTimeslot.getListOfReservedSeats().Add(seat["seatnumber"].ToString());
                                     }
                                 }
@@ -544,15 +660,27 @@ namespace MovieReservation
                             if (comBoxTimeslots3.Items.Count >= 5)
                                 break;
 
-                            tempDateTime = DateTime.Parse(movie1.getListOfMovieTimeslots().LastOrDefault().getTimeslot());
+                            tempDateTime = DateTime.Parse(movie3.getListOfMovieTimeslots().LastOrDefault().getTimeslot());
                             for (int index = (5 - movieTimeslotDataTable.Rows.Count); comBoxTimeslots3.Items.Count < 5; index += 1)
                             {
                                 tempDateTime = tempDateTime.AddHours(1);
-                                nextTableId = function.getNextTableId("movietimeslot");
-                                sqlQuery = $"UPDATE `movietimeslot` SET `movietitle_id`='{movie3.getMovieId()}'," +
-                                            $"`cinema_id`={movie3.getCinemaId()}," +
-                                            $"`timeslot`='{tempDateTime.ToString("yyyy-MM-dd HH:mm:ss")}' WHERE `table_id`={nextTableId}";
-                                functionMySQL.setDatabase(sqlQuery);
+                                nextTableId = classGlobalVariables.MSSQLMode ? microsoftSQLfunction.getNextTableId("movietimeslot") : mySQLfunction.getNextTableId("movietimeslot");
+                                sqlQuery = $"UPDATE `movietimeslot` SET `movietitle_id`= @movietitle_id," +
+                                           $"`cinema_id`= @cinemaId," +
+                                           $"`timeslot`= @timeslot WHERE `table_id`= @nextTableId";
+                                setDatabase = classGlobalVariables.MSSQLMode ? functionMSSQL.setDatabase(sqlQuery, new Dictionary<string, string>
+                                {
+                                    ["@movietitle_id"] = movie3.getMovieId().ToString(),
+                                    ["@cinemaId"] = movie3.getCinemaId().ToString(),
+                                    ["@timeslot"] = tempDateTime.ToString("yyyy-MM-dd HH:mm:ss"),
+                                    ["@nextTableId"] = nextTableId.ToString()
+                                }) : functionMySQL.setDatabase(sqlQuery, new Dictionary<string, string>
+                                {
+                                    ["@movietitle_id"] = movie3.getMovieId().ToString(),
+                                    ["@cinemaId"] = movie3.getCinemaId().ToString(),
+                                    ["@timeslot"] = tempDateTime.ToString("yyyy-MM-dd HH:mm:ss"),
+                                    ["@nextTableId"] = nextTableId.ToString()
+                                });
 
                                 classMovieTimeslot = new classMovieTimeslot();
                                 classMovieTimeslot.setId(nextTableId);
@@ -620,6 +748,7 @@ namespace MovieReservation
         private void ConfirmNewPosterChange(int cinemaNumber)
         {
             string sqlQuery;
+            bool setDatabase;
             try
             {
                 if (MessageBox.Show("Do you want to change the displayed poster?", "Change Movie Poster", MessageBoxButtons.OKCancel) == DialogResult.Cancel)
@@ -653,10 +782,17 @@ namespace MovieReservation
                         break;
                 }
 
-                sqlQuery = @"UPDATE `cinema` set `poster_filepath`='" + openFileDialog.FileName.Replace('\\', '/') +
-                           "' WHERE `table_id`='" + cinemaNumber + "'";
-
-                functionMySQL.setDatabase(sqlQuery);
+                sqlQuery = @"UPDATE `cinema` set `poster_filepath`= @poster WHERE `table_id`= @cinemaId ";
+                setDatabase = classGlobalVariables.MSSQLMode ? functionMSSQL.setDatabase(sqlQuery, new Dictionary<string, string> 
+                              {
+                                    ["@poster"] = openFileDialog.FileName,
+                                    ["@cinemaId"] = cinemaNumber.ToString()
+                              }) :
+                              functionMySQL.setDatabase(sqlQuery, new Dictionary<string, string>
+                              {
+                                  ["@poster"] = openFileDialog.FileName,
+                                  ["@cinemaId"] = cinemaNumber.ToString()
+                              });
             }
             catch (Exception ex)
             {
@@ -683,12 +819,11 @@ namespace MovieReservation
         private void ChangeTicketPrice(int cinemaId)
         {
             string sqlQuery;
-            functionMySQL function;
+            bool setDatabase;
 
             try
             {
                 sqlQuery = "";
-                function = new functionMySQL();
 
                 if (MessageBox.Show($"Do you want to change the ticket price of Cinema {cinemaId}?", "Change Ticket Price", MessageBoxButtons.OKCancel) == DialogResult.Cancel)
                     return;
@@ -699,8 +834,16 @@ namespace MovieReservation
 
                 if (changeForm.Decision)
                 {
-                    sqlQuery = $"UPDATE `cinema` SET `ticketprice`='{changeForm.NewValue}' WHERE `table_id`={cinemaId}";
-                    functionMySQL.setDatabase(sqlQuery);
+                    sqlQuery = $"UPDATE `cinema` SET `ticketprice`= @ticketprice WHERE `table_id`= @cinemaId ";
+                    setDatabase = classGlobalVariables.MSSQLMode ? functionMSSQL.setDatabase(sqlQuery, new Dictionary<string, string> 
+                                {
+                                    ["@ticketprice"] = changeForm.NewValue,
+                                    ["@cinemaId"] = cinemaId.ToString()
+                                }) : functionMySQL.setDatabase(sqlQuery, new Dictionary<string, string>
+                                {
+                                    ["@ticketprice"] = changeForm.NewValue,
+                                    ["@cinemaId"] = cinemaId.ToString()
+                                });
 
                     switch (cinemaId)
                     {
@@ -744,13 +887,18 @@ namespace MovieReservation
         {
             string sqlQuery;
             long nextTableId;
-            functionMySQL function;
+            functionMySQL mySQLfunction;
+            functionMSSQL microsoftSQLfunction;
+            bool setDatabase;
+            classMovieTimeslot movieTimeslot;
+            DateTime time;
 
             try
             {
                 sqlQuery = "";
                 nextTableId = 0;
-                function = new functionMySQL();
+                mySQLfunction = new functionMySQL();
+                microsoftSQLfunction = new functionMSSQL();
 
                 if (MessageBox.Show($"Do you want to change the Movie Title in Cinema {cinemaId}?", "Change Movie Title", MessageBoxButtons.OKCancel) == DialogResult.Cancel)
                     return;
@@ -761,30 +909,176 @@ namespace MovieReservation
 
                 if (changeForm.Decision)
                 {
-                    nextTableId = function.getNextTableId("movietitle");
-                    sqlQuery = $"UPDATE `movietitle` SET `movietitle`='{changeForm.NewValue}' WHERE `table_id`={nextTableId}";
-                    functionMySQL.setDatabase(sqlQuery);
+                    nextTableId = classGlobalVariables.MSSQLMode ? microsoftSQLfunction.getNextTableId("movietitle") :
+                                  mySQLfunction.getNextTableId("movietitle");
 
-                    sqlQuery = $"UPDATE `cinema` SET `movietitle_id`='{nextTableId}' WHERE `table_id`={cinemaId}";
-                    functionMySQL.setDatabase(sqlQuery);
+                    sqlQuery = $"UPDATE `movietitle` SET `movietitle`= @movieTitle WHERE `table_id`= @tableId";
+                    setDatabase = classGlobalVariables.MSSQLMode ? functionMSSQL.setDatabase(sqlQuery, new Dictionary<string, string> 
+                                  {
+                                        ["@movieTitle"] = changeForm.NewValue,
+                                        ["@tableId"] = nextTableId.ToString()
+                                  }) :
+                                  functionMySQL.setDatabase(sqlQuery, new Dictionary<string, string>
+                                  {
+                                      ["@movieTitle"] = changeForm.NewValue,
+                                      ["@tableId"] = nextTableId.ToString()
+                                  });
+
+                    sqlQuery = $"UPDATE `cinema` SET `movietitle_id`= @movieTitleId WHERE `table_id`= @tableId ";
+                    setDatabase = classGlobalVariables.MSSQLMode ? functionMSSQL.setDatabase(sqlQuery, new Dictionary<string, string>
+                                  {
+                                        ["@movieTitleId"] = nextTableId.ToString(),
+                                        ["@tableId"] = cinemaId.ToString(),
+                                  }) :
+                                  functionMySQL.setDatabase(sqlQuery, new Dictionary<string, string>
+                                  {
+                                      ["@movieTitleId"] = nextTableId.ToString(),
+                                      ["@tableId"] = cinemaId.ToString(),
+                                  });
 
                     switch (cinemaId)
                     {
                         case 1:
-                            labelMovieTitle1.Text = changeForm.NewValue;
+                            labelMovieTitle1.Text = changeForm.NewValue.ToUpper();
                             movie1.setMovieId(nextTableId);
                             movie1.setMovieName(changeForm.NewValue);
+                            movie1.getListOfMovieTimeslots().Clear();
+                            comBoxTimeslots1.Items.Clear();
+
+                            time = DateTime.Today.Date + new TimeSpan(1, 0, 0);
+                            for (int index = 0; index < 5; index += 1)
+                            {
+                                nextTableId = classGlobalVariables.MSSQLMode ? microsoftSQLfunction.getNextTableId("movietimeslot") :
+                                              mySQLfunction.getNextTableId("movietimeslot");
+
+                                sqlQuery = $"UPDATE `movietimeslot` SET `movietitle_id`= @movietitle_id," +
+                                           $"`cinema_id`= @cinemaId," +
+                                           $"`timeslot`= @timeslot WHERE `table_id`= @nextTableId";
+                                setDatabase = classGlobalVariables.MSSQLMode ? functionMSSQL.setDatabase(sqlQuery, new Dictionary<string, string>
+                                {
+                                    ["@movietitle_id"] = movie1.getMovieId().ToString(),
+                                    ["@cinemaId"] = cinemaId.ToString(),
+                                    ["@timeslot"] = time.ToString("yyyy-MM-dd HH:mm:ss"),
+                                    ["@nextTableId"] = nextTableId.ToString()
+                                }) : functionMySQL.setDatabase(sqlQuery, new Dictionary<string, string>
+                                {
+                                    ["@movietitle_id"] = movie1.getMovieId().ToString(),
+                                    ["@cinemaId"] = cinemaId.ToString(),
+                                    ["@timeslot"] = time.ToString("yyyy-MM-dd HH:mm:ss"),
+                                    ["@nextTableId"] = nextTableId.ToString()
+                                });
+
+                                movieTimeslot = new classMovieTimeslot();
+                                movieTimeslot.setId(nextTableId);
+                                movieTimeslot.setTimeslot(time.ToString("hh:mm tt"));
+                                movieTimeslot.setCinemaId(1);
+                                movieTimeslot.setMovieTitle(labelMovieTitle1.Text);
+                                movieTimeslot.setTicketPrice(movie1.getTicketPrice());
+                                movieTimeslot.setMoviePosterFilePath(movie1.getMoviePosterPath());
+
+                                movie1.getListOfMovieTimeslots().Add(movieTimeslot);
+                                comBoxTimeslots1.Items.Add(movieTimeslot.getTimeslot());
+                                time = time.AddHours(1);
+                            }
+
+                            labelSeatsValue1.Text = "180";
+                            comBoxTimeslots1.SelectedIndex = 0;
                             break;
+
                         case 2:
-                            labelMovieTitle2.Text = changeForm.NewValue;
+                            labelMovieTitle2.Text = changeForm.NewValue.ToUpper();
                             movie2.setMovieId(nextTableId);
                             movie2.setMovieName(changeForm.NewValue);
+                            movie2.getListOfMovieTimeslots().Clear();
+                            comBoxTimeslots2.Items.Clear();
+
+                            time = DateTime.Today.Date + new TimeSpan(1, 0, 0);
+                            for (int index = 0; index < 5; index += 1)
+                            {
+                                nextTableId = classGlobalVariables.MSSQLMode ? microsoftSQLfunction.getNextTableId("movietimeslot") :
+                                              mySQLfunction.getNextTableId("movietimeslot");
+
+                                sqlQuery = $"UPDATE `movietimeslot` SET `movietitle_id`= @movietitle_id," +
+                                           $"`cinema_id`= @cinemaId," +
+                                           $"`timeslot`= @timeslot WHERE `table_id`= @nextTableId";
+                                setDatabase = classGlobalVariables.MSSQLMode ? functionMSSQL.setDatabase(sqlQuery, new Dictionary<string, string>
+                                {
+                                    ["@movietitle_id"] = movie2.getMovieId().ToString(),
+                                    ["@cinemaId"] = cinemaId.ToString(),
+                                    ["@timeslot"] = time.ToString("yyyy-MM-dd HH:mm:ss"),
+                                    ["@nextTableId"] = nextTableId.ToString()
+                                }) : functionMySQL.setDatabase(sqlQuery, new Dictionary<string, string>
+                                {
+                                    ["@movietitle_id"] = movie2.getMovieId().ToString(),
+                                    ["@cinemaId"] = cinemaId.ToString(),
+                                    ["@timeslot"] = time.ToString("yyyy-MM-dd HH:mm:ss"),
+                                    ["@nextTableId"] = nextTableId.ToString()
+                                });
+
+                                movieTimeslot = new classMovieTimeslot();
+                                movieTimeslot.setId(nextTableId);
+                                movieTimeslot.setTimeslot(time.ToString("hh:mm tt"));
+                                movieTimeslot.setCinemaId(2);
+                                movieTimeslot.setMovieTitle(labelMovieTitle2.Text);
+                                movieTimeslot.setTicketPrice(movie2.getTicketPrice());
+                                movieTimeslot.setMoviePosterFilePath(movie2.getMoviePosterPath());
+
+                                movie2.getListOfMovieTimeslots().Add(movieTimeslot);
+                                comBoxTimeslots2.Items.Add(movieTimeslot.getTimeslot());
+                                time = time.AddHours(1);
+                            }
+
+                            labelSeatsValue2.Text = "180";
+                            comBoxTimeslots2.SelectedIndex = 0;
                             break;
+
                         case 3:
-                            labelMovieTitle3.Text = changeForm.NewValue;
+                            labelMovieTitle3.Text = changeForm.NewValue.ToUpper();
                             movie3.setMovieId(nextTableId);
                             movie3.setMovieName(changeForm.NewValue);
+                            movie3.getListOfMovieTimeslots().Clear();
+                            comBoxTimeslots3.Items.Clear();
+
+                            time = DateTime.Today.Date + new TimeSpan(1, 0, 0);
+                            for (int index = 0; index < 5; index += 1)
+                            {
+                                nextTableId = classGlobalVariables.MSSQLMode ? microsoftSQLfunction.getNextTableId("movietimeslot") :
+                                              mySQLfunction.getNextTableId("movietimeslot");
+
+                                sqlQuery = $"UPDATE `movietimeslot` SET `movietitle_id`= @movietitle_id," +
+                                           $"`cinema_id`= @cinemaId," +
+                                           $"`timeslot`= @timeslot WHERE `table_id`= @nextTableId";
+                                setDatabase = classGlobalVariables.MSSQLMode ? functionMSSQL.setDatabase(sqlQuery, new Dictionary<string, string>
+                                {
+                                    ["@movietitle_id"] = movie3.getMovieId().ToString(),
+                                    ["@cinemaId"] = cinemaId.ToString(),
+                                    ["@timeslot"] = time.ToString("yyyy-MM-dd HH:mm:ss"),
+                                    ["@nextTableId"] = nextTableId.ToString()
+                                }) : functionMySQL.setDatabase(sqlQuery, new Dictionary<string, string>
+                                {
+                                    ["@movietitle_id"] = movie3.getMovieId().ToString(),
+                                    ["@cinemaId"] = cinemaId.ToString(),
+                                    ["@timeslot"] = time.ToString("yyyy-MM-dd HH:mm:ss"),
+                                    ["@nextTableId"] = nextTableId.ToString()
+                                });
+
+                                movieTimeslot = new classMovieTimeslot();
+                                movieTimeslot.setId(nextTableId);
+                                movieTimeslot.setTimeslot(time.ToString("hh:mm tt"));
+                                movieTimeslot.setCinemaId(3);
+                                movieTimeslot.setMovieTitle(labelMovieTitle3.Text);
+                                movieTimeslot.setTicketPrice(movie3.getTicketPrice());
+                                movieTimeslot.setMoviePosterFilePath(movie3.getMoviePosterPath());
+
+                                movie3.getListOfMovieTimeslots().Add(movieTimeslot);
+                                comBoxTimeslots3.Items.Add(movieTimeslot.getTimeslot());
+                                time = time.AddHours(1);
+                            }
+
+                            labelSeatsValue3.Text = "180";
+                            comBoxTimeslots3.SelectedIndex = 0;
                             break;
+
                         default:
                             break;
                     }
@@ -818,13 +1112,16 @@ namespace MovieReservation
             long nextTableId;
             classMovie movieTitle;
             classMovieTimeslot movieTimeslot;
-            functionMySQL function;
+            functionMySQL mySQLfunction;
+            functionMSSQL microsoftSQLfunction;
+            bool setDatabase;
 
             try
             {
                 sqlQuery = "";
                 nextTableId = 0;
-                function = new functionMySQL();
+                mySQLfunction = new functionMySQL();
+                microsoftSQLfunction = new functionMSSQL();
 
                 movieTitle = (cinemaId == 1) ? movie1 : 
                              (cinemaId == 2) ? movie2 : 
@@ -839,10 +1136,24 @@ namespace MovieReservation
 
                 if (addForm.Decision)
                 {
-                    nextTableId = function.getNextTableId("movietimeslot");
-                    sqlQuery = $"UPDATE `movietimeslot` SET `movietitle_id`={movieTitle.getMovieId()},`cinema_id`= {cinemaId}, `timeslot`='{DateTime.Parse(addForm.NewValue).ToString($"{DateTime.Now.Date.ToString("yyyy-MM-dd")} HH:mm:ss")}' " +
-                               $"WHERE `table_id`={nextTableId}";
-                    functionMySQL.setDatabase(sqlQuery);
+                    nextTableId = classGlobalVariables.MSSQLMode ? microsoftSQLfunction.getNextTableId("movietimeslot") :
+                                  mySQLfunction.getNextTableId("movietimeslot");
+                    sqlQuery = $"UPDATE `movietimeslot` SET `movietitle_id`= @movietitle_id," +
+                               $"`cinema_id`= @cinemaId, `timeslot`= @timeslot " +
+                               $"WHERE `table_id`= @nextTableId ";
+                    setDatabase = classGlobalVariables.MSSQLMode ? functionMSSQL.setDatabase(sqlQuery, new Dictionary<string, string>
+                                  {
+                                        ["@movietitle_id"] = movieTitle.getMovieId().ToString(),
+                                        ["@cinemaId"] = cinemaId.ToString(),
+                                        ["@timeslot"] = DateTime.Parse(addForm.NewValue).ToString($"{DateTime.Now.Date.ToString("yyyy-MM-dd")} HH:mm:ss"),
+                                        ["@nextTableId"] = nextTableId.ToString()
+                                  }) : functionMySQL.setDatabase(sqlQuery, new Dictionary<string, string>
+                                  {
+                                      ["@movietitle_id"] = movieTitle.getMovieId().ToString(),
+                                      ["@cinemaId"] = cinemaId.ToString(),
+                                      ["@timeslot"] = DateTime.Parse(addForm.NewValue).ToString($"{DateTime.Now.Date.ToString("yyyy-MM-dd")} HH:mm:ss"),
+                                      ["@nextTableId"] = nextTableId.ToString()
+                                  });
 
                     movieTimeslot = new classMovieTimeslot();
                     movieTimeslot.setId(nextTableId);
@@ -892,16 +1203,14 @@ namespace MovieReservation
         private void RemoveTimeslot(int cinemaId)
         {
             string sqlQuery;
-            long nextTableId;
             classMovie movieTitle;
-            classMovieTimeslot movieTimeslot;
-            functionMySQL function;
+            bool setDatabase;
+            long removedTimeslotId;
 
             try
             {
                 sqlQuery = "";
-                nextTableId = 0;
-                function = new functionMySQL();
+                removedTimeslotId = 0;
 
                 movieTitle = (cinemaId == 1) ? movie1 :
                              (cinemaId == 2) ? movie2 :
@@ -916,10 +1225,14 @@ namespace MovieReservation
 
                 if (removeForm.Decision)
                 {
-                    sqlQuery = $"UPDATE `movietimeslot` SET `isremoved`= '1' WHERE `table_id`={removeForm.RemovedMovieTimeslotId}";
-                    functionMySQL.setDatabase(sqlQuery);
+                    removedTimeslotId = removeForm.RemovedMovieTimeslotId;
+                    sqlQuery = $"UPDATE `movietimeslot` SET `isremoved`= '1' WHERE `table_id`= @removedTimeslotId";
+                    setDatabase = classGlobalVariables.MSSQLMode ? functionMSSQL.setDatabase(sqlQuery, new Dictionary<string, string>
+                                  { ["@removedTimeslotId"] = removedTimeslotId.ToString() }) : 
+                                  functionMySQL.setDatabase(sqlQuery, new Dictionary<string, string>
+                                  { ["@removedTimeslotId"] = removedTimeslotId.ToString() });
 
-                    classMovieTimeslot removedMovieTimeslot = movieTitle.getListOfMovieTimeslots().Where(x => x.getId() == removeForm.RemovedMovieTimeslotId).FirstOrDefault();
+                    classMovieTimeslot removedMovieTimeslot = movieTitle.getListOfMovieTimeslots().Where(x => x.getId() == removedTimeslotId).FirstOrDefault();
                     movieTitle.removeMovieTimeslotFromList(removedMovieTimeslot);
 
                     switch (cinemaId)
@@ -968,21 +1281,41 @@ namespace MovieReservation
 
             try
             {
-                sqlQuery = @"SELECT T.`date_of_transaction` as `Date of Transaction`, 
-                            T.`customername` as `Customer`, 
-                            GROUP_CONCAT( D.`seatnumber`) as `Seat Number`, 
-                            S.`timeslot` as `Timeslot`, 
-                            M.`movietitle` as `Movie`,
-                            IF (D.`iscancelled`=1, 'Cancelled', IF(NOW() > S.`timeslot`,'Used','Reserved')) as `Status` 
-                            FROM `transaction` as T
-                            LEFT JOIN `movietimeslot` as S ON T.`movietimeslot_id` = S.`table_id`
-                            LEFT JOIN `cinema` as C ON S.`cinema_id` = C.`table_id`
-                            LEFT JOIN `transactiondetail` as D ON T.`table_id` = D.`transaction_id`
-                            LEFT JOIN `movietitle` as M on M.`table_id`=S.`movietitle_id`
-                            WHERE C.`table_id`=" + cinemaId + 
-                            " GROUP BY T.`table_id`";
+                if (classGlobalVariables.MSSQLMode)
+                    sqlQuery = @"SELECT T.date_of_transaction as ""Date of Transaction"", 
+                                T.customername as ""Customer"", 
+                                STUFF((
+							      SELECT ',' + D.seatnumber
+							      FROM transactiondetail D
+							      WHERE T.table_id = D.transaction_id
+							      FOR XML PATH('')), 1, 1, '') as ""Seat Number"", 
+                                S.timeslot as ""Timeslot"", 
+                                M.movietitle as ""Movie"",
+                                IIF (D.iscancelled=1, 'Cancelled', IIF(CURRENT_TIMESTAMP > S.timeslot,'Used','Reserved')) as ""Status"" 
+                                FROM [transaction] as T
+                                LEFT JOIN movietimeslot as S ON T.movietimeslot_id = S.table_id
+                                LEFT JOIN cinema as C ON S.cinema_id = C.table_id
+                                LEFT JOIN transactiondetail as D ON T.table_id = D.transaction_id
+                                LEFT JOIN movietitle as M on M.table_id=S.movietitle_id
+                                WHERE C.table_id=" + cinemaId +
+                                " GROUP BY T.table_id, T.date_of_transaction, T.customername, S.timeslot, M.movietitle, D.iscancelled";
+                else
+                    sqlQuery = @"SELECT T.`date_of_transaction` as `Date of Transaction`, 
+                                T.`customername` as `Customer`, 
+                                GROUP_CONCAT( D.`seatnumber`) as `Seat Number`, 
+                                S.`timeslot` as `Timeslot`, 
+                                M.`movietitle` as `Movie`,
+                                IF (D.`iscancelled`=1, 'Cancelled', IF(NOW() > S.`timeslot`,'Used','Reserved')) as `Status` 
+                                FROM `transaction` as T
+                                LEFT JOIN `movietimeslot` as S ON T.`movietimeslot_id` = S.`table_id`
+                                LEFT JOIN `cinema` as C ON S.`cinema_id` = C.`table_id`
+                                LEFT JOIN `transactiondetail` as D ON T.`table_id` = D.`transaction_id`
+                                LEFT JOIN `movietitle` as M on M.`table_id`=S.`movietitle_id`
+                                WHERE C.`table_id`=" + cinemaId + 
+                                " GROUP BY T.`table_id`";
 
-                cinemaHistory = functionMySQL.getFromDatabase(sqlQuery);
+                cinemaHistory = classGlobalVariables.MSSQLMode ? functionMSSQL.getFromDatabase(sqlQuery) :
+                                functionMySQL.getFromDatabase(sqlQuery);
 
                 if (cinemaHistory.Rows.Count <= 0)
                 {

@@ -113,6 +113,7 @@
       <DependentUpon>frmViewHistory.cs</DependentUpon>
     </Compile>
     <Compile Include="functions\functionGlobal.cs" />
+    <Compile Include="functions\functionMSSQL.cs" />
     <Compile Include="functions\functionMySQL.cs" />
     <Compile Include="Program.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />

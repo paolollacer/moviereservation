@@ -92,7 +92,7 @@ namespace MovieReservation.Properties {
         ///UserName=root
         ///Password=1234
         ///Database=moviereservationdb
-        ///.
+        ///MSSQLmode=false.
         /// </summary>
         internal static string settings {
             get {
